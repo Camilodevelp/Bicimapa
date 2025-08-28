@@ -5,6 +5,8 @@ import '../services/location_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -29,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadLocation();
+    _loadGeoJson();
   }
 
   Future<void> _loadLocation() async {
@@ -40,6 +43,36 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       print("Error obteniendo ubicación: $e");
     }
+  }
+
+    Future<void> _loadGeoJson() async {
+    final String data = await rootBundle.loadString('assets/ciclorutas_bogota.geojson');
+    final geoJson = json.decode(data);
+
+    Set<Polyline> polylines = {};
+
+    int polylineId = 1;
+    for (var feature in geoJson['features']) {
+      if (feature['geometry']['type'] == 'LineString') {
+        List<LatLng> points = (feature['geometry']['coordinates'] as List)
+          .map((coord) => LatLng(coord[1], coord[0]))
+          .toList();
+
+        polylines.add(
+          Polyline(
+            polylineId: PolylineId('cicloruta_$polylineId'),
+            points: points,
+            color: Colors.green,
+            width: 4,
+          ),
+        );
+        polylineId++;
+      }
+    }
+
+    setState(() {
+      _polylines = polylines;
+    });
   }
 
   void _showRouteOnMap(List<LatLng> points, String routeId) async {
