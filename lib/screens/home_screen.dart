@@ -46,17 +46,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
     Future<void> _loadGeoJson() async {
-    final String data = await rootBundle.loadString('assets/ciclorutas_bogota.geojson');
-    final geoJson = json.decode(data);
+  final String data = await rootBundle.loadString('assets/ciclorruta.geojson');
+  final geoJson = json.decode(data);
 
-    Set<Polyline> polylines = {};
+  Set<Polyline> polylines = {};
 
-    int polylineId = 1;
-    for (var feature in geoJson['features']) {
-      if (feature['geometry']['type'] == 'LineString') {
-        List<LatLng> points = (feature['geometry']['coordinates'] as List)
+  int polylineId = 1;
+  for (var feature in geoJson['features']) {
+    final geometry = feature['geometry'];
+    if (geometry['type'] == 'LineString') {
+      List<LatLng> points = (geometry['coordinates'] as List)
           .map((coord) => LatLng(coord[1], coord[0]))
           .toList();
+
+      polylines.add(
+        Polyline(
+          polylineId: PolylineId('cicloruta_$polylineId'),
+          points: points,
+          color: Colors.green,
+          width: 4,
+        ),
+      );
+      polylineId++;
+    } else if (geometry['type'] == 'Polygon') {
+      // Solo toma el primer anillo del polígono (en general suficiente para ciclorutas)
+      List<dynamic> rings = geometry['coordinates'];
+      if (rings.isNotEmpty) {
+        List<LatLng> points = (rings[0] as List)
+            .map((coord) => LatLng(coord[1], coord[0]))
+            .toList();
 
         polylines.add(
           Polyline(
@@ -69,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
         polylineId++;
       }
     }
+  }
 
     setState(() {
       _polylines = polylines;
