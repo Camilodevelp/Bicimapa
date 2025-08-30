@@ -234,11 +234,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemCount: routes.length,
                         itemBuilder: (context, index) {
                           final route = routes[index];
-                          return RouteCard(
-                            route: route,
+                          return InkWell(
                             onTap: () {
                               _showRouteOnMap(route.points, route.id);
                             },
+                            child: RouteCard(
+                              routeName: route.name,
+                              distance: '${route.distance} km',
+                              duration: route.duration,
+                            ),
                           );
                         },
                       ),
