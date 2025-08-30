@@ -18,12 +18,12 @@ List<LatLng> simplify(List<LatLng> points, double tolerance) {
       return ((p.longitude - p1.longitude) * (p.longitude - p1.longitude)) +
           ((p.latitude - p1.latitude) * (p.latitude - p1.latitude));
     }
-    final t = ((p.longitude - p1.longitude) * dx + (p.latitude - p1.latitude) * dy) / (dx * dx + dy * dy);
-    final nearest = LatLng(
-      p1.latitude + t * dy,
-      p1.longitude + t * dx,
-    );
-    return ((p.longitude - nearest.longitude) * (p.longitude - nearest.longitude)) +
+    final t =
+        ((p.longitude - p1.longitude) * dx + (p.latitude - p1.latitude) * dy) /
+        (dx * dx + dy * dy);
+    final nearest = LatLng(p1.latitude + t * dy, p1.longitude + t * dx);
+    return ((p.longitude - nearest.longitude) *
+            (p.longitude - nearest.longitude)) +
         ((p.latitude - nearest.latitude) * (p.latitude - nearest.latitude));
   }
 
@@ -56,6 +56,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final routeService = RouteService();
   final locationService = LocationService();
+  final TextEditingController _searchController = TextEditingController();
 
   late final routes = routeService.getAllRoutes();
   final Completer<GoogleMapController> _controller = Completer();
@@ -63,46 +64,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Set<Polyline> _polylines = {};
 
-  
-
   @override
-void initState() {
-  super.initState();
-  _loadLocation();
-  _loadGeoJson(); // Solo llama a la versión principal
-}
+  void initState() {
+    super.initState();
+    _loadLocation();
+    _loadGeoJson(); // Solo llama a la versión principal
+  }
 
-Future<void> _loadGeoJson() async {
-  final String data = await rootBundle.loadString('assets/ciclorruta.geojson');
-  final geoJson = json.decode(data);
+  Future<void> _loadGeoJson() async {
+    final String data = await rootBundle.loadString(
+      'assets/ciclorruta.geojson',
+    );
+    final geoJson = json.decode(data);
 
-  Set<Polyline> polylines = {};
+    Set<Polyline> polylines = {};
 
-  int polylineId = 1;
-  for (var feature in geoJson['features']) {
-    final geometry = feature['geometry'];
-    if (geometry['type'] == 'LineString') {
-      List<LatLng> points = (geometry['coordinates'] as List)
-          .map((coord) => LatLng(coord[1], coord[0]))
-          .toList();
-      points = simplify(points, 0.0005); // <-- Usa simplify aquí
-
-      polylines.add(
-        Polyline(
-          polylineId: PolylineId('cicloruta_$polylineId'),
-          points: points,
-          color: Colors.green,
-          width: 4,
-        ),
-      );
-      polylineId++;
-    } else if (geometry['type'] == 'Polygon') {
-      List<dynamic> rings = geometry['coordinates'];
-      if (rings.isNotEmpty) {
-        List<LatLng> points = (rings[0] as List)
+    int polylineId = 1;
+    for (var feature in geoJson['features']) {
+      final geometry = feature['geometry'];
+      if (geometry['type'] == 'LineString') {
+        List<LatLng> points = (geometry['coordinates'] as List)
             .map((coord) => LatLng(coord[1], coord[0]))
             .toList();
-        points = simplify(points, 0.0005); // <-- Y aquí también
+        points = simplify(points, 0.0005); // <-- Usa simplify aquí
 
         polylines.add(
           Polyline(
@@ -113,14 +97,31 @@ Future<void> _loadGeoJson() async {
           ),
         );
         polylineId++;
+      } else if (geometry['type'] == 'Polygon') {
+        List<dynamic> rings = geometry['coordinates'];
+        if (rings.isNotEmpty) {
+          List<LatLng> points = (rings[0] as List)
+              .map((coord) => LatLng(coord[1], coord[0]))
+              .toList();
+          points = simplify(points, 0.0005); // <-- Y aquí también
+
+          polylines.add(
+            Polyline(
+              polylineId: PolylineId('cicloruta_$polylineId'),
+              points: points,
+              color: Colors.green,
+              width: 4,
+            ),
+          );
+          polylineId++;
+        }
       }
     }
-  }
 
-  setState(() {
-    _polylines = polylines;
-  });
-}
+    setState(() {
+      _polylines = polylines;
+    });
+  }
 
   Future<void> _loadLocation() async {
     try {
@@ -173,7 +174,7 @@ Future<void> _loadGeoJson() async {
     );
   }
 
-@override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Bicimapa')),
@@ -181,6 +182,27 @@ Future<void> _loadGeoJson() async {
           ? const Center(child: CircularProgressIndicator())
           : Stack(
               children: [
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  right: 16,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(8),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar dirección o lugar...',
+                        prefixIcon: Icon(Icons.search),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 15),
+                      ),
+                      onSubmitted: (value) {
+                        print('Buscando: $value');
+                      },
+                    ),
+                  ),
+                ),
                 Column(
                   children: [
                     // Texto con la ubicación actual
