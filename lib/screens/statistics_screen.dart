@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/user_service.dart';
 
 class StatisticsScreen extends StatelessWidget {
-  const StatisticsScreen({Key? key}) : super(key: key);
+  const StatisticsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

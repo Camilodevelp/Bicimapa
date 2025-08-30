@@ -8,8 +8,46 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
 
+List<LatLng> simplify(List<LatLng> points, double tolerance) {
+  if (points.length < 3) return points;
+
+  double distance(LatLng p, LatLng p1, LatLng p2) {
+    final dx = p2.longitude - p1.longitude;
+    final dy = p2.latitude - p1.latitude;
+    if (dx == 0 && dy == 0) {
+      return ((p.longitude - p1.longitude) * (p.longitude - p1.longitude)) +
+          ((p.latitude - p1.latitude) * (p.latitude - p1.latitude));
+    }
+    final t = ((p.longitude - p1.longitude) * dx + (p.latitude - p1.latitude) * dy) / (dx * dx + dy * dy);
+    final nearest = LatLng(
+      p1.latitude + t * dy,
+      p1.longitude + t * dx,
+    );
+    return ((p.longitude - nearest.longitude) * (p.longitude - nearest.longitude)) +
+        ((p.latitude - nearest.latitude) * (p.latitude - nearest.latitude));
+  }
+
+  int index = 0;
+  double maxDist = 0;
+  for (int i = 1; i < points.length - 1; i++) {
+    final dist = distance(points[i], points[0], points.last);
+    if (dist > maxDist) {
+      index = i;
+      maxDist = dist;
+    }
+  }
+
+  if (maxDist > tolerance * tolerance) {
+    final rec1 = simplify(points.sublist(0, index + 1), tolerance);
+    final rec2 = simplify(points.sublist(index, points.length), tolerance);
+    return rec1.sublist(0, rec1.length - 1) + rec2;
+  } else {
+    return [points.first, points.last];
+  }
+}
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -20,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final locationService = LocationService();
 
   late final routes = routeService.getAllRoutes();
-  Completer<GoogleMapController> _controller = Completer();
+  final Completer<GoogleMapController> _controller = Completer();
   LatLng? _currentPosition;
 
   Set<Polyline> _polylines = {};
@@ -28,24 +66,13 @@ class _HomeScreenState extends State<HomeScreen> {
   
 
   @override
-  void initState() {
-    super.initState();
-    _loadLocation();
-    _loadGeoJson();
-  }
+void initState() {
+  super.initState();
+  _loadLocation();
+  _loadGeoJson(); // Solo llama a la versión principal
+}
 
-  Future<void> _loadLocation() async {
-    try {
-      final position = await locationService.getCurrentLocation();
-      setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-      });
-    } catch (e) {
-      print("Error obteniendo ubicación: $e");
-    }
-  }
-
-    Future<void> _loadGeoJson() async {
+Future<void> _loadGeoJson() async {
   final String data = await rootBundle.loadString('assets/ciclorruta.geojson');
   final geoJson = json.decode(data);
 
@@ -58,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
       List<LatLng> points = (geometry['coordinates'] as List)
           .map((coord) => LatLng(coord[1], coord[0]))
           .toList();
+      points = simplify(points, 0.0005); // <-- Usa simplify aquí
 
       polylines.add(
         Polyline(
@@ -69,12 +97,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       polylineId++;
     } else if (geometry['type'] == 'Polygon') {
-      // Solo toma el primer anillo del polígono (en general suficiente para ciclorutas)
       List<dynamic> rings = geometry['coordinates'];
       if (rings.isNotEmpty) {
         List<LatLng> points = (rings[0] as List)
             .map((coord) => LatLng(coord[1], coord[0]))
             .toList();
+        points = simplify(points, 0.0005); // <-- Y aquí también
 
         polylines.add(
           Polyline(
@@ -89,9 +117,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-    setState(() {
-      _polylines = polylines;
-    });
+  setState(() {
+    _polylines = polylines;
+  });
+}
+
+  Future<void> _loadLocation() async {
+    try {
+      final position = await locationService.getCurrentLocation();
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+      });
+    } catch (e) {
+      print("Error obteniendo ubicación: $e");
+    }
   }
 
   void _showRouteOnMap(List<LatLng> points, String routeId) async {
@@ -134,64 +173,55 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Bicimapa')),
       body: _currentPosition == null
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : Stack(
               children: [
-                // Texto con la ubicación actual
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Ubicación actual: Lat ${_currentPosition!.latitude}, Lon ${_currentPosition!.longitude}',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-
-                // Mapa de Google
-                SizedBox(
-                  height: 250,
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: _currentPosition!,
-                      zoom: 14,
-                    ),
-                    polylines: _polylines,
-                    myLocationEnabled: true,
-                    onMapCreated: (GoogleMapController controller) {
-                      if (!_controller.isCompleted) {
-                        _controller.complete(controller);
-                      }
-                    },
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId("current_location"),
-                        position: _currentPosition!,
-                        infoWindow: const InfoWindow(title: "Tu ubicación"),
+                Column(
+                  children: [
+                    // Texto con la ubicación actual
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Ubicación actual: Lat ${_currentPosition!.latitude}, Lon ${_currentPosition!.longitude}',
+                        style: const TextStyle(fontSize: 16),
                       ),
-                    },
-                  ),
-                ),
-
-                // Lista de rutas
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: routes.length,
-                    itemBuilder: (context, index) {
-                      final route = routes[index];
-                      return InkWell(
-                        onTap: () => _showRouteOnMap(route.points, route.id),
-                        child: RouteCard(
-                          routeName: route.name,
-                          distance: '${route.distance} km',
-                          duration: route.duration,
+                    ),
+                    // Mapa de Google
+                    SizedBox(
+                      height: 250,
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: _currentPosition!,
+                          zoom: 13,
                         ),
-                      );
-                    },
-                  ),
+                        polylines: _polylines,
+                        myLocationEnabled: true,
+                        onMapCreated: (controller) {
+                          _controller.complete(controller);
+                        },
+                      ),
+                    ),
+                    // Lista de rutas
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: routes.length,
+                        itemBuilder: (context, index) {
+                          final route = routes[index];
+                          return RouteCard(
+                            route: route,
+                            onTap: () {
+                              _showRouteOnMap(route.points, route.id);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

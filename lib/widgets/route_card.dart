@@ -6,11 +6,11 @@ class RouteCard extends StatelessWidget {
   final String duration;
 
   const RouteCard({
-    Key? key,
+    super.key,
     required this.routeName,
     required this.distance,
     required this.duration,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
