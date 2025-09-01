@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import '../services/route_service.dart';
-import '../widgets/route_card.dart';
 import '../services/location_service.dart';
+import '../services/places_services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
-import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 List<LatLng> simplify(List<LatLng> points, double tolerance) {
   if (points.length < 3) return points;
@@ -54,6 +55,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  late final String apiKey;
+  late final PlacesService placesService;
   final routeService = RouteService();
   final locationService = LocationService();
   final TextEditingController _searchController = TextEditingController();
@@ -67,8 +70,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    apiKey = dotenv.env['GOOGLE_API_KEY'] ?? '';
+    placesService = PlacesService(apiKey);
     _loadLocation();
-    _loadGeoJson(); // Solo llama a la versión principal
+    _loadGeoJson();
   }
 
   Future<void> _loadGeoJson() async {
@@ -86,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
         List<LatLng> points = (geometry['coordinates'] as List)
             .map((coord) => LatLng(coord[1], coord[0]))
             .toList();
-        points = simplify(points, 0.0005); // <-- Usa simplify aquí
+        points = simplify(points, 0.0005);
 
         polylines.add(
           Polyline(
@@ -103,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           List<LatLng> points = (rings[0] as List)
               .map((coord) => LatLng(coord[1], coord[0]))
               .toList();
-          points = simplify(points, 0.0005); // <-- Y aquí también
+          points = simplify(points, 0.0005);
 
           polylines.add(
             Polyline(
@@ -134,44 +139,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showRouteOnMap(List<LatLng> points, String routeId) async {
-    if (points.isEmpty) return;
-
-    final controller = await _controller.future;
-
-    final polyline = Polyline(
-      polylineId: PolylineId(routeId),
-      points: points,
-      width: 5,
-      color: Colors.blue,
-      consumeTapEvents: false,
-    );
-
-    setState(() {
-      _polylines = {polyline};
-    });
-
-    final bounds = _calculateBounds(points);
-    controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
-  }
-
-  LatLngBounds _calculateBounds(List<LatLng> points) {
-    double minLat = points.first.latitude;
-    double maxLat = points.first.latitude;
-    double minLng = points.first.longitude;
-    double maxLng = points.first.longitude;
-
-    for (final p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -182,72 +153,61 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Stack(
               children: [
+                // El mapa ocupa toda la pantalla
+                Positioned.fill(
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _currentPosition!,
+                      zoom: 13,
+                    ),
+                    polylines: _polylines,
+                    myLocationEnabled: true,
+                    onMapCreated: (controller) {
+                      _controller.complete(controller);
+                    },
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId("current_location"),
+                        position: _currentPosition!,
+                        infoWindow: const InfoWindow(title: "Tu ubicación"),
+                      ),
+                    },
+                  ),
+                ),
+                // Cuadro de búsqueda flotante sobre el mapa
                 Positioned(
-                  top: 16,
+                  top: 24,
                   left: 16,
                   right: 16,
                   child: Material(
                     elevation: 4,
                     borderRadius: BorderRadius.circular(8),
-                    child: TextField(
+                    child: TypeAheadField(
                       controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Buscar dirección o lugar...',
-                        prefixIcon: Icon(Icons.search),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 15),
-                      ),
-                      onSubmitted: (value) {
-                        print('Buscando: $value');
+                      builder: (context, controller, focusNode) {
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar dirección o lugar...',
+                            prefixIcon: Icon(Icons.search),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 15),
+                          ),
+                        );
+                      },
+                      suggestionsCallback: (pattern) async {
+                        if (pattern.isEmpty) return [];
+                        return await placesService.fetchSuggestions(pattern);
+                      },
+                      itemBuilder: (context, suggestion) {
+                        return ListTile(title: Text(suggestion));
+                      },
+                      onSelected: (suggestion) {
+                        print('Seleccionaste: $suggestion');
                       },
                     ),
                   ),
-                ),
-                Column(
-                  children: [
-                    // Texto con la ubicación actual
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        'Ubicación actual: Lat ${_currentPosition!.latitude}, Lon ${_currentPosition!.longitude}',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ),
-                    // Mapa de Google
-                    SizedBox(
-                      height: 250,
-                      child: GoogleMap(
-                        initialCameraPosition: CameraPosition(
-                          target: _currentPosition!,
-                          zoom: 13,
-                        ),
-                        polylines: _polylines,
-                        myLocationEnabled: true,
-                        onMapCreated: (controller) {
-                          _controller.complete(controller);
-                        },
-                      ),
-                    ),
-                    // Lista de rutas
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: routes.length,
-                        itemBuilder: (context, index) {
-                          final route = routes[index];
-                          return InkWell(
-                            onTap: () {
-                              _showRouteOnMap(route.points, route.id);
-                            },
-                            child: RouteCard(
-                              routeName: route.name,
-                              distance: '${route.distance} km',
-                              duration: route.duration,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart'; // ojo: revisa que el archivo se llame bien
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'screens/home_screen.dart'; 
 
-void main() {
+
+Future<void> main() async {
+  await dotenv.load();
   runApp(const MyApp());
 }
 
@@ -16,7 +19,10 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: const HomeScreen(), // 👈 aquí llamamos tu pantalla principal
+      home: const HomeScreen(),
     );
   }
 }
+
+
+
