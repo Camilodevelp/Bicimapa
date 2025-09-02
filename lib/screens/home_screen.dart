@@ -64,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final routes = routeService.getAllRoutes();
   final Completer<GoogleMapController> _controller = Completer();
   LatLng? _currentPosition;
+  Marker? _destinationMarker;
 
   Set<Polyline> _polylines = {};
 
@@ -114,7 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Polyline(
               polylineId: PolylineId('cicloruta_$polylineId'),
               points: points,
-              color: Colors.green,
+              color: Colors.blue,
               width: 4,
             ),
           );
@@ -153,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Stack(
               children: [
-                // El mapa ocupa toda la pantalla
+                // Mapa
                 Positioned.fill(
                   child: GoogleMap(
                     initialCameraPosition: CameraPosition(
@@ -171,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         position: _currentPosition!,
                         infoWindow: const InfoWindow(title: "Tu ubicación"),
                       ),
+                      if (_destinationMarker != null) _destinationMarker!,
                     },
                   ),
                 ),
@@ -182,29 +184,55 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Material(
                     elevation: 4,
                     borderRadius: BorderRadius.circular(8),
-                    child: TypeAheadField(
+                    child: TypeAheadField<Map<String, String>>(
                       controller: _searchController,
+                      suggestionsCallback: (pattern) async {
+                        if (pattern.isEmpty) return [];
+                        return await placesService.fetchSuggestions(pattern);
+                      },
+                      itemBuilder: (context, suggestion) {
+                        return ListTile(
+                          title: Text(suggestion['description']!),
+                        );
+                      },
+                      onSelected: (suggestion) async {
+                        final placeId = suggestion['place_id']!;
+                        final location = await placesService.getPlaceLocation(
+                          placeId,
+                        );
+                        if (location != null) {
+                          final newLatLng = LatLng(
+                            location['lat']!,
+                            location['lng']!,
+                          );
+
+                          // Mover cámara y actualizar marcador
+                          final controller = await _controller.future;
+                          controller.animateCamera(
+                            CameraUpdate.newLatLng(newLatLng),
+                          );
+                          setState(() {
+                            _destinationMarker = Marker(
+                              markerId: const MarkerId("destination"),
+                              position: newLatLng,
+                              infoWindow: InfoWindow(
+                                title: suggestion['description'],
+                              ),
+                            );
+                          });
+                        }
+                      },
                       builder: (context, controller, focusNode) {
                         return TextField(
                           controller: controller,
                           focusNode: focusNode,
-                          decoration: InputDecoration(
+                          decoration: const InputDecoration(
                             hintText: 'Buscar dirección o lugar...',
                             prefixIcon: Icon(Icons.search),
                             border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(vertical: 15),
                           ),
                         );
-                      },
-                      suggestionsCallback: (pattern) async {
-                        if (pattern.isEmpty) return [];
-                        return await placesService.fetchSuggestions(pattern);
-                      },
-                      itemBuilder: (context, suggestion) {
-                        return ListTile(title: Text(suggestion));
-                      },
-                      onSelected: (suggestion) {
-                        print('Seleccionaste: $suggestion');
                       },
                     ),
                   ),
